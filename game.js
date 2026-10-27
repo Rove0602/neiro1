@@ -1,10 +1,9 @@
 (() => {
     'use strict';
 
-    // ====== КОНСТАНТЫ ======
-    const TILE = 20;          // размер одной клетки в пикселях
-    const COLS = 28;          // ширина лабиринта в клетках
-    const ROWS = 31;          // высота лабиринта в клетках
+    const TILE = 20;
+    const COLS = 28;
+    const ROWS = 31;
 
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
@@ -16,8 +15,6 @@
     const overlayText = document.getElementById('overlay-text');
     const startBtn = document.getElementById('start-btn');
 
-    // ====== КАРТА ЛАБИРИНТА ======
-    // '#' — стена, '.' — точка, 'o' — энергизатор, ' ' — пусто, '-' — ворота призраков
     const RAW_MAP = [
         "############################",
         "#............##............#",
@@ -52,9 +49,10 @@
         "############################"
     ];
 
-    // ====== КЛАСС СУЩНОСТИ (общая база для игрока и призраков) ======
+    // ====== БАЗОВЫЙ КЛАСС ======
     class Entity {
         constructor(x, y, speed) {
+            // координаты в пикселях (центр спрайта)
             this.startX = x;
             this.startY = y;
             this.speed = speed;
@@ -66,83 +64,121 @@
             this.dir = { x: 0, y: 0 };
             this.nextDir = { x: 0, y: 0 };
         }
-        // Проверка: можно ли стоять в клетке (не стена)
-        canMove(cx, cy, map) {
-            if (cx < 0 || cx >= COLS) return true; // туннель по бокам
-            if (cy < 0 || cy >= ROWS) return false;
-            const tile = map[cy][cx];
-            return tile !== '#' && tile !== '-';
+
+        // Стена ли клетка (для призраков ворота '--' проходимы)
+        isWall(col, row, passGate = false) {
+            if (row < 0 || row >= ROWS) return true;
+            if (col < 0 || col >= COLS) return false; // туннель
+            const t = RAW_MAP[row][col];
+            if (t === '#') return true;
+            if (t === '-' && !passGate) return true;
+            return false;
+        }
+
+        // Признак того, что сущность «в центре» клетки (с допуском)
+        isAtCenter(tolerance = 1) {
+            const cx = Math.floor(this.x / TILE) * TILE + TILE / 2;
+            const cy = Math.floor(this.y / TILE) * TILE + TILE / 2;
+            return Math.abs(this.x - cx) <= tolerance &&
+                   Math.abs(this.y - cy) <= tolerance;
+        }
+
+        // Выровнять по центру текущей клетки
+        snapToCenter() {
+            this.x = Math.floor(this.x / TILE) * TILE + TILE / 2;
+            this.y = Math.floor(this.y / TILE) * TILE + TILE / 2;
+        }
+
+        // Плавно двигаться в направлении dir, останавливаясь у стены
+        moveAlongDir(map) {
+            if (this.dir.x === 0 && this.dir.y === 0) return;
+            const col = Math.floor(this.x / TILE);
+            const row = Math.floor(this.y / TILE);
+
+            // Проверяем следующую клетку в направлении движения
+            const nc = col + this.dir.x;
+            const nr = row + this.dir.y;
+
+            // Если впереди стена и мы уже у её края — стоп
+            if (this.isWall(nc, nr, this.passGate)) {
+                // двигаемся только до центра текущей клетки
+                const cx = col * TILE + TILE / 2;
+                const cy = row * TILE + TILE / 2;
+                if (this.dir.x > 0 && this.x < cx) this.x = Math.min(this.x + this.speed, cx);
+                if (this.dir.x < 0 && this.x > cx) this.x = Math.max(this.x - this.speed, cx);
+                if (this.dir.y > 0 && this.y < cy) this.y = Math.min(this.y + this.speed, cy);
+                if (this.dir.y < 0 && this.y > cy) this.y = Math.max(this.y - this.speed, cy);
+            } else {
+                this.x += this.dir.x * this.speed;
+                this.y += this.dir.y * this.speed;
+            }
+
+            // Телепорт в туннеле
+            if (this.x < -TILE / 2) this.x = COLS * TILE + TILE / 2;
+            if (this.x > COLS * TILE + TILE / 2) this.x = -TILE / 2;
         }
     }
 
     // ====== ИГРОК ======
     class Pacman extends Entity {
         constructor() {
-            super(13.5 * TILE, 23 * TILE, 2);
-            this.dir = { x: 0, y: 0 };
-            this.nextDir = { x: 0, y: 0 };
+            super(13.5 * TILE + TILE / 2, 23 * TILE + TILE / 2, 2);
+            this.radius = TILE * 0.42;
             this.mouth = 0;
             this.mouthDir = 1;
-            this.radius = TILE * 0.42;
+            this.passGate = false;
         }
+
         update(map) {
-            // Пробуем повернуть
-            if (this.nextDir.x !== 0 || this.nextDir.y !== 0) {
-                const testX = this.x + this.nextDir.x * this.speed;
-                const testY = this.y + this.nextDir.y * this.speed;
-                if (this.canMove(
-                    Math.floor((testX + this.radius) / TILE),
-                    Math.floor(testY / TILE), map) &&
-                    this.canMove(
-                    Math.floor((testX - this.radius) / TILE),
-                    Math.floor(testY / TILE), map) &&
-                    this.canMove(
-                    Math.floor(testX / TILE),
-                    Math.floor((testY + this.radius) / TILE), map) &&
-                    this.canMove(
-                    Math.floor(testX / TILE),
-                    Math.floor((testY - this.radius) / TILE), map)
-                ) {
-                    // выравниваем по сетке при повороте
-                    if (this.nextDir.x !== 0) this.y = Math.round(this.y / TILE) * TILE;
-                    if (this.nextDir.y !== 0) this.x = Math.round(this.x / TILE) * TILE;
+            // Если есть желаемое направление и мы можем повернуть — поворачиваем
+            // Поворот возможен только когда мы выровнены (хотя бы по одной оси)
+            const tryTurn = () => {
+                if (this.nextDir.x === 0 && this.nextDir.y === 0) return false;
+                // Разрешаем смену направления только у центра клетки
+                if (!this.isAtCenter(this.speed)) return false;
+
+                const col = Math.floor(this.x / TILE);
+                const row = Math.floor(this.y / TILE);
+                if (!this.isWall(col + this.nextDir.x, row + this.nextDir.y, false)) {
+                    this.snapToCenter();
                     this.dir = { ...this.nextDir };
+                    return true;
+                }
+                return false;
+            };
+
+            // Пробуем повернуть (в т.ч. разворот на 180°)
+            if (this.nextDir.x !== this.dir.x || this.nextDir.y !== this.dir.y) {
+                // Разворот на 180° разрешаем в любой момент
+                if (this.nextDir.x === -this.dir.x && this.nextDir.y === -this.dir.y &&
+                    (this.dir.x !== 0 || this.dir.y !== 0)) {
+                    this.dir = { ...this.nextDir };
+                } else {
+                    tryTurn();
                 }
             }
 
-            // Движение
-            if (this.dir.x !== 0 || this.dir.y !== 0) {
-                const nx = this.x + this.dir.x * this.speed;
-                const ny = this.y + this.dir.y * this.speed;
-
-                const checkX = Math.floor((nx + this.dir.x * this.radius) / TILE);
-                const checkY = Math.floor((ny + this.dir.y * this.radius) / TILE);
-                const curX = Math.floor(nx / TILE);
-                const curY = Math.floor(ny / TILE);
-
-                if (this.canMove(checkX, checkY, map) && this.canMove(curX, curY, map)) {
-                    this.x = nx;
-                    this.y = ny;
-                }
+            // Если стоим у стены, но nextDir свободен и мы в центре — поехали
+            if (this.dir.x === 0 && this.dir.y === 0) {
+                tryTurn();
             }
 
-            // Туннель
-            if (this.x < -TILE) this.x = COLS * TILE + TILE;
-            if (this.x > COLS * TILE + TILE) this.x = -TILE;
+            this.moveAlongDir(map);
 
             // Анимация рта
-            this.mouth += 0.15 * this.mouthDir;
-            if (this.mouth > 1 || this.mouth < 0) this.mouthDir *= -1;
+            if (this.dir.x !== 0 || this.dir.y !== 0) {
+                this.mouth += 0.15 * this.mouthDir;
+                if (this.mouth > 1 || this.mouth < 0) this.mouthDir *= -1;
+            }
         }
+
         draw() {
-            const cx = this.x;
-            const cy = this.y;
             const r = this.radius;
-            const angle = Math.atan2(this.dir.y, this.dir.x);
+            const angle = Math.atan2(this.dir.y, this.dir.x) || 0;
             const open = Math.abs(Math.sin(this.mouth * Math.PI)) * 0.35 + 0.02;
 
             ctx.save();
-            ctx.translate(cx, cy);
+            ctx.translate(this.x, this.y);
             ctx.rotate(angle);
             ctx.beginPath();
             ctx.moveTo(0, 0);
@@ -160,68 +196,70 @@
     const GHOST_COLORS = ['#ff0000', '#ffb8ff', '#00ffff', '#ffb852'];
 
     class Ghost extends Entity {
-        constructor(x, y, color, id) {
-            super(x * TILE + TILE / 2, y * TILE + TILE / 2, 1.6);
+        constructor(tileX, tileY, color, id) {
+            super(tileX * TILE + TILE / 2, tileY * TILE + TILE / 2, 1.6);
             this.color = color;
             this.id = id;
-            this.dir = { x: 0, y: 0 };
             this.frightened = false;
             this.frightTimer = 0;
             this.eaten = false;
+            this.passGate = true; // призраки проходят через ворота
             this.homeX = this.x;
             this.homeY = this.y;
         }
+
         reset() {
             super.reset();
             this.frightened = false;
             this.frightTimer = 0;
             this.eaten = false;
             this.dir = { x: 0, y: -1 };
+            this.nextDir = { x: 0, y: -1 };
         }
-        // Выбор направления: приоритет — не разворачиваться
-        chooseDirection(map, targetX, targetY, randomize = false) {
-            const dirs = [
-                { x: 0, y: -1 }, // вверх
-                { x: -1, y: 0 }, // влево
-                { x: 0, y: 1 },  // вниз
-                { x: 1, y: 0 }   // вправо
-            ];
-            const options = [];
-            const curCol = Math.floor(this.x / TILE);
-            const curRow = Math.floor(this.y / TILE);
 
-            for (const d of dirs) {
-                // не разворачиваемся
-                if (d.x === -this.dir.x && d.y === -this.dir.y) continue;
-                const nc = curCol + d.x;
-                const nr = curRow + d.y;
-                if (nc < 0 || nc >= COLS) {
-                    // туннель — разрешаем
-                    options.push(d);
-                    continue;
+        // Выбор направления движения (у центра клетки)
+        chooseDirection(map, targetCol, targetRow) {
+            const col = Math.floor(this.x / TILE);
+            const row = Math.floor(this.y / TILE);
+
+            const dirs = [
+                { x: 0, y: -1 },
+                { x: -1, y: 0 },
+                { x: 0, y: 1 },
+                { x: 1, y: 0 }
+            ];
+
+            // Свободные направления (кроме разворота)
+            const options = dirs.filter(d => {
+                if (d.x === -this.dir.x && d.y === -this.dir.y) return false;
+                const nc = col + d.x;
+                const nr = row + d.y;
+                if (nc < 0 || nc >= COLS) return true; // туннель
+                return !this.isWall(nc, nr, this.passGate);
+            });
+
+            // В «доме» призракам нельзя выходить через стены дома — но passGate=true
+            // При испуге — случайно
+            if (this.frightened) {
+                if (options.length === 0) {
+                    this.dir = { x: -this.dir.x, y: -this.dir.y };
+                } else {
+                    this.dir = options[Math.floor(Math.random() * options.length)];
                 }
-                if (nr < 0 || nr >= ROWS) continue;
-                if (this.canMove(nc, nr, map)) options.push(d);
+                return;
             }
 
             if (options.length === 0) {
-                // тупик — разворот
                 this.dir = { x: -this.dir.x, y: -this.dir.y };
                 return;
             }
 
-            if (randomize || this.frightened) {
-                this.dir = options[Math.floor(Math.random() * options.length)];
-                return;
-            }
-
-            // Выбираем ближайшее к цели
             let best = options[0];
             let bestDist = Infinity;
             for (const d of options) {
-                const nx = curCol + d.x;
-                const ny = curRow + d.y;
-                const dist = (nx - targetX) ** 2 + (ny - targetY) ** 2;
+                const nx = col + d.x;
+                const ny = row + d.y;
+                const dist = (nx - targetCol) ** 2 + (ny - targetRow) ** 2;
                 if (dist < bestDist) {
                     bestDist = dist;
                     best = d;
@@ -229,34 +267,26 @@
             }
             this.dir = best;
         }
-        update(map, pacman, ghosts) {
-            // Двигаемся только когда в центре клетки
-            const centerX = Math.floor(this.x / TILE) * TILE + TILE / 2;
-            const centerY = Math.floor(this.y / TILE) * TILE + TILE / 2;
-            const atCenter = Math.abs(this.x - centerX) < this.speed &&
-                             Math.abs(this.y - centerY) < this.speed;
 
-            if (atCenter) {
-                // выравниваем
-                this.x = centerX;
-                this.y = centerY;
+        update(map, pacman, ghosts) {
+            // 1) Если в центре клетки — выбираем направление
+            if (this.isAtCenter(this.speed)) {
+                this.snapToCenter();
 
                 const pCol = Math.floor(pacman.x / TILE);
                 const pRow = Math.floor(pacman.y / TILE);
-
                 let tx = pCol, ty = pRow;
 
-                if (!this.frightened && !this.eaten) {
-                    // разные стратегии
+                if (this.eaten) {
+                    tx = Math.floor(this.homeX / TILE);
+                    ty = Math.floor(this.homeY / TILE);
+                } else if (!this.frightened) {
                     if (this.id === 0) {
-                        // красный — прямо на пакмана
                         tx = pCol; ty = pRow;
                     } else if (this.id === 1) {
-                        // розовый — за 4 клетки впереди
                         tx = pCol + pacman.dir.x * 4;
                         ty = pRow + pacman.dir.y * 4;
                     } else if (this.id === 2) {
-                        // голубой — вектор от красного через точку впереди
                         const rCol = Math.floor(ghosts[0].x / TILE);
                         const rRow = Math.floor(ghosts[0].y / TILE);
                         const ax = pCol + pacman.dir.x * 2;
@@ -264,64 +294,47 @@
                         tx = ax + (ax - rCol);
                         ty = ay + (ay - rRow);
                     } else {
-                        // оранжевый — убегает если близко
                         const dist = (pCol - Math.floor(this.x / TILE)) ** 2 +
                                      (pRow - Math.floor(this.y / TILE)) ** 2;
                         if (dist < 64) {
                             tx = Math.floor(Math.random() * COLS);
                             ty = Math.floor(Math.random() * ROWS);
-                        } else {
-                            tx = pCol; ty = pRow;
                         }
                     }
                 }
 
-                if (this.eaten) {
-                    tx = Math.floor(this.homeX / TILE);
-                    ty = Math.floor(this.homeY / TILE);
-                }
+                this.chooseDirection(map, tx, ty);
 
-                this.chooseDirection(map, tx, ty, this.frightened);
-
+                // Проверка возврата домой после съедения
                 if (this.eaten &&
-                    Math.abs(this.x - this.homeX) < TILE &&
-                    Math.abs(this.y - this.homeY) < TILE) {
+                    Math.abs(this.x - this.homeX) < TILE / 2 &&
+                    Math.abs(this.y - this.homeY) < TILE / 2) {
                     this.eaten = false;
                     this.frightened = false;
+                    this.dir = { x: 0, y: -1 };
                 }
             }
 
-            // Движение
-            this.x += this.dir.x * this.speed;
-            this.y += this.dir.y * this.speed;
+            // 2) Движение с проверкой стены
+            this.moveAlongDir(map);
 
-            // Туннель
-            if (this.x < -TILE) this.x = COLS * TILE + TILE;
-            if (this.x > COLS * TILE + TILE) this.x = -TILE;
-
-            // Таймер испуга
+            // 3) Таймер испуга
             if (this.frightened) {
                 this.frightTimer--;
-                if (this.frightTimer <= 0) {
-                    this.frightened = false;
-                }
+                if (this.frightTimer <= 0) this.frightened = false;
             }
         }
+
         draw() {
-            const x = this.x;
-            const y = this.y;
+            const x = this.x, y = this.y;
             const r = TILE * 0.42;
 
             let bodyColor = this.color;
             if (this.frightened) {
-                if (this.frightTimer < 120 && Math.floor(this.frightTimer / 15) % 2 === 0) {
-                    bodyColor = '#ffffff';
-                } else {
-                    bodyColor = '#2121ff';
-                }
+                bodyColor = (this.frightTimer < 120 && Math.floor(this.frightTimer / 15) % 2 === 0)
+                    ? '#ffffff' : '#2121ff';
             }
             if (this.eaten) {
-                // только глаза
                 ctx.fillStyle = '#fff';
                 ctx.beginPath();
                 ctx.arc(x - r * 0.35, y - r * 0.2, r * 0.28, 0, Math.PI * 2);
@@ -338,14 +351,10 @@
             ctx.save();
             ctx.shadowColor = bodyColor;
             ctx.shadowBlur = 8;
-
-            // тело призрака
             ctx.fillStyle = bodyColor;
             ctx.beginPath();
             ctx.arc(x, y - r * 0.1, r, Math.PI, 0);
             ctx.lineTo(x + r, y + r * 0.7);
-
-            // волнистый низ
             const waves = 4;
             const waveW = (r * 2) / waves;
             for (let i = 0; i < waves; i++) {
@@ -357,21 +366,18 @@
             ctx.closePath();
             ctx.fill();
 
-            // глаза
             if (!this.frightened) {
                 ctx.fillStyle = '#fff';
                 ctx.beginPath();
                 ctx.ellipse(x - r * 0.35, y - r * 0.15, r * 0.28, r * 0.34, 0, 0, Math.PI * 2);
                 ctx.ellipse(x + r * 0.35, y - r * 0.15, r * 0.28, r * 0.34, 0, 0, Math.PI * 2);
                 ctx.fill();
-
                 ctx.fillStyle = '#0000ff';
                 ctx.beginPath();
                 ctx.arc(x - r * 0.35 + this.dir.x * 3, y - r * 0.15 + this.dir.y * 3, r * 0.15, 0, Math.PI * 2);
                 ctx.arc(x + r * 0.35 + this.dir.x * 3, y - r * 0.15 + this.dir.y * 3, r * 0.15, 0, Math.PI * 2);
                 ctx.fill();
             } else {
-                // испуганное лицо
                 ctx.fillStyle = '#fff';
                 ctx.beginPath();
                 ctx.arc(x - r * 0.3, y - r * 0.1, r * 0.12, 0, Math.PI * 2);
@@ -399,7 +405,7 @@
             this.score = 0;
             this.lives = 3;
             this.level = 1;
-            this.state = 'idle'; // idle | playing | paused | dying | won | gameover
+            this.state = 'idle';
             this.dotsLeft = 0;
             this.pacman = new Pacman();
             this.ghosts = [];
@@ -412,13 +418,12 @@
             this.map = RAW_MAP.map(row => row.split(''));
             this.dotsLeft = 0;
             for (const row of this.map) {
-                for (const t of row) {
-                    if (t === '.' || t === 'o') this.dotsLeft++;
-                }
+                for (const t of row) if (t === '.' || t === 'o') this.dotsLeft++;
             }
         }
 
         initGhosts() {
+            // тайлы 11..15, ряды 11..14 — «дом» призраков
             this.ghosts = [
                 new Ghost(13.5, 11, GHOST_COLORS[0], 0),
                 new Ghost(13.5, 14, GHOST_COLORS[1], 1),
@@ -456,6 +461,8 @@
             this.score = 0;
             this.lives = 3;
             this.level = 1;
+            this.pacman.speed = 2;
+            for (const g of this.ghosts) g.speed = 1.6;
             this.startLevel();
         }
 
@@ -473,7 +480,6 @@
             levelEl.textContent = this.level;
         }
 
-        // Поедание точек
         eatDot() {
             const col = Math.floor(this.pacman.x / TILE);
             const row = Math.floor(this.pacman.y / TILE);
@@ -487,12 +493,10 @@
                 this.map[row][col] = ' ';
                 this.score += 50;
                 this.dotsLeft--;
-                // испуг призраков
                 for (const g of this.ghosts) {
                     if (!g.eaten) {
                         g.frightened = true;
                         g.frightTimer = 300;
-                        // разворот
                         g.dir = { x: -g.dir.x, y: -g.dir.y };
                     }
                 }
@@ -500,7 +504,6 @@
             this.updateHUD();
         }
 
-        // Столкновения
         checkCollisions() {
             for (const g of this.ghosts) {
                 const dx = g.x - this.pacman.x;
@@ -512,7 +515,7 @@
                         this.score += 200;
                         this.updateHUD();
                     } else if (!g.eaten) {
-                        return true; // столкновение — смерть
+                        return true;
                     }
                 }
             }
@@ -542,40 +545,24 @@
 
         update() {
             if (this.state !== 'playing') return;
-
             this.pacman.update(this.map);
             this.eatDot();
-
-            for (const g of this.ghosts) {
-                g.update(this.map, this.pacman, this.ghosts);
-            }
-
-            if (this.checkCollisions()) {
-                this.loseLife();
-                return;
-            }
-
-            if (this.dotsLeft === 0) {
-                this.nextLevel();
-            }
+            for (const g of this.ghosts) g.update(this.map, this.pacman, this.ghosts);
+            if (this.checkCollisions()) { this.loseLife(); return; }
+            if (this.dotsLeft === 0) this.nextLevel();
         }
 
         draw() {
-            // фон
             ctx.fillStyle = '#000';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // карта
             for (let r = 0; r < ROWS; r++) {
                 for (let c = 0; c < COLS; c++) {
                     const t = this.map[r][c];
-                    const x = c * TILE;
-                    const y = r * TILE;
-
+                    const x = c * TILE, y = r * TILE;
                     if (t === '#') {
                         ctx.fillStyle = '#1a1aff';
                         ctx.fillRect(x, y, TILE, TILE);
-                        // внутренний контур
                         ctx.strokeStyle = '#4444ff';
                         ctx.lineWidth = 1;
                         ctx.strokeRect(x + 2, y + 2, TILE - 4, TILE - 4);
@@ -599,11 +586,9 @@
                 }
             }
 
-            // призраки и пакман
             for (const g of this.ghosts) g.draw();
             this.pacman.draw();
 
-            // пауза
             if (this.state === 'paused') {
                 ctx.fillStyle = 'rgba(0,0,0,0.6)';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -615,9 +600,7 @@
         }
     }
 
-    // ====== ЗАПУСК ======
     const game = new Game();
-
     function loop() {
         game.update();
         game.draw();
@@ -626,11 +609,7 @@
     loop();
 
     startBtn.addEventListener('click', () => {
-        if (game.state === 'gameover' || game.state === 'idle') {
-            game.start();
-        } else {
-            game.state = 'playing';
-            overlay.classList.add('hidden');
-        }
+        if (game.state === 'gameover' || game.state === 'idle') game.start();
+        else { game.state = 'playing'; overlay.classList.add('hidden'); }
     });
 })();
