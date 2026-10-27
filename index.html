@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pac-Man</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="game-container">
+        <div class="hud">
+            <div class="score">Очки: <span id="score">0</span></div>
+            <div class="lives">Жизни: <span id="lives">❤❤❤</span></div>
+            <div class="level">Уровень: <span id="level">1</span></div>
+        </div>
+        <canvas id="game" width="560" height="620"></canvas>
+        <div class="overlay" id="overlay">
+            <h1 id="overlay-title">PAC-MAN</h1>
+            <p id="overlay-text">Стрелки / WASD — движение. Пробел — пауза.</p>
+            <button id="start-btn">Начать игру</button>
+        </div>
+    </div>
+    <script src="game.js"></script>
+</body>
+</html>

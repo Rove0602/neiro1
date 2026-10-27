@@ -1,0 +1,97 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background: #000;
+    color: #fff;
+    font-family: 'Courier New', monospace;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    overflow: hidden;
+}
+
+.game-container {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.hud {
+    display: flex;
+    justify-content: space-between;
+    width: 560px;
+    padding: 8px 4px;
+    font-size: 18px;
+    font-weight: bold;
+    color: #ffcc00;
+    text-shadow: 0 0 8px #ffcc00;
+}
+
+#lives span {
+    color: #ff0066;
+}
+
+canvas {
+    background: #000;
+    border: 3px solid #1a1aff;
+    border-radius: 6px;
+    box-shadow: 0 0 20px #1a1aff, inset 0 0 20px rgba(26, 26, 255, 0.2);
+    display: block;
+}
+
+.overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.92);
+    border: 3px solid #ffcc00;
+    border-radius: 12px;
+    padding: 30px 40px;
+    text-align: center;
+    box-shadow: 0 0 30px #ffcc00;
+    z-index: 10;
+}
+
+.overlay.hidden {
+    display: none;
+}
+
+.overlay h1 {
+    color: #ffcc00;
+    font-size: 42px;
+    margin-bottom: 14px;
+    text-shadow: 0 0 15px #ffcc00;
+    letter-spacing: 4px;
+}
+
+.overlay p {
+    color: #fff;
+    margin-bottom: 20px;
+    font-size: 15px;
+}
+
+#start-btn {
+    background: #ffcc00;
+    color: #000;
+    border: none;
+    padding: 12px 34px;
+    font-size: 18px;
+    font-weight: bold;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+
+#start-btn:hover {
+    transform: scale(1.08);
+    box-shadow: 0 0 20px #ffcc00;
+}
